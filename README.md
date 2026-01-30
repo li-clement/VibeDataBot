@@ -82,4 +82,4 @@ This is a prototype / concept validation project. Contributions are welcome to m
 
 ## 📄 License
 
-MIT
+Apache License 2.0
