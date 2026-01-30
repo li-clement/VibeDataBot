@@ -28,39 +28,8 @@ VibeDataBot is an experimental web-based prototype designed to reimagine the exp
 
 ### Target System Architecture
 
-```mermaid
-graph TD
-    User[User / Developer] -->|Natural Language / Actions| UI[VibeDataBot UI \n (Next.js)]
-    
-    subgraph "Frontend Layer"
-        UI -->|Component| AgentFE[Agent Interface]
-        UI -->|Component| Visualizer[Pipeline Visualizer]
-        UI -->|Component| Resources[Resource Manager]
-    end
+![VibeDataBot Architecture](ray-data-agent-proto/public/vibedatabot-architecture.png)
 
-    subgraph "Control Plane (Goal)"
-        AgentFE -.->|REST / gRPC| Gateway[API Gateway]
-        Gateway -->|Manage| RayServe[Ray Serve \n (Agent Backend)]
-        RayServe -->|Inference| LLM[LLM Reasoning Core]
-        RayServe -->|Plan| Planner[Execution Planner]
-    end
-
-    subgraph "Ray Data Plane"
-        Planner -->|Submit Job| RayCluster[Ray Cluster]
-        RayCluster -->|Ray Data| Processing[Data Processing \n (ETL / PII Spec)]
-        RayCluster -->|Distributed| Workers[Ray Workers]
-    end
-
-    subgraph "Data Layer"
-        Processing <-->|Read/Write| S3[S3 / Data Lake]
-        Processing <-->|Query| DB[Warehouses \n (Snowflake/Postgres)]
-        Processing <-->|Download| HF[HuggingFace Hub]
-    end
-
-    style UI fill:#1a1b26,stroke:#7aa2f7,color:#fff
-    style RayCluster fill:#ff69b4,stroke:#fff,color:#000,stroke-width:2px
-    style LLM fill:#41a6b5,stroke:#fff,color:#fff
-```
 
 The project currently implements the **Frontend Layer** with simulated connections to the backend.
 
