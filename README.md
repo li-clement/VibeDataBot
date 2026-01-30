@@ -5,7 +5,7 @@
 
 VibeDataBot is an experimental web-based prototype designed to reimagine the experience of AI data engineering. It combines the aesthetic of a modern "Dark Mode" IDE with the power of an intelligent agent that can plan, visualize, and execute data pipelines on a Ray cluster.
 
-![VibeDataBot Interface](/public/window.svg) *(Replace with actual screenshot)*
+![VibeDataBot Interface](ray-data-agent-proto/public/vibedatabot-preview.png)
 
 ## ✨ Key Features
 
