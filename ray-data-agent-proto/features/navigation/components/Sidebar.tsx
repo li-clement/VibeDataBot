@@ -1,3 +1,7 @@
+
+
+
+
 "use client";
 
 import React, { useState } from "react";
@@ -15,8 +19,10 @@ import {
     Cloud,
     HardDrive,
     Activity,
-    Cpu
+    Cpu,
+    Monitor
 } from "lucide-react";
+import { FileTree } from "@/features/navigation/components/FileTree";
 
 interface SidebarProps {
     isOpen: boolean;
@@ -50,6 +56,16 @@ export function Sidebar({ isOpen, toggle }: SidebarProps) {
             {/* Nav Items */}
             <div className="flex-1 py-4 flex flex-col gap-1 px-2 overflow-y-auto scrollbar-hide">
                 <NavItem icon={<FolderGit2 size={20} />} label="Projects" isOpen={isOpen} active={!selectedResource} onClick={() => setSelectedResource(null)} />
+
+                <NavSection
+                    icon={<Monitor size={20} />}
+                    label="Local Workspace"
+                    isOpen={isOpen}
+                >
+                    <div className="flex flex-col mt-1 bg-black/20 rounded max-h-[300px] overflow-hidden">
+                        <FileTree />
+                    </div>
+                </NavSection>
 
                 <NavSection
                     icon={<Database size={20} />}

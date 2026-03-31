@@ -76,6 +76,8 @@ The project follows a **Feature-based Modular Architecture** for scalability and
 
 4.  Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+![VibeDataBot screenshot](ray-data-agent-proto/public/vibedatabot-screenshot.png)
+
 ## 🤝 Contributing
 
 This is a prototype / concept validation project. Contributions are welcome to migrate the simulated logic to real Ray bindings!

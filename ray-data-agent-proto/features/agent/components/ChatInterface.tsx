@@ -3,45 +3,118 @@
 import React, { useState } from "react";
 import { Send, Sparkles, Loader2 } from "lucide-react";
 import { useAgent } from "@/features/agent/context/AgentContext";
+import { MockPlanGenerator } from "@/features/agent/logic/PlanGenerator";
+import { ExecutionEngine } from "@/features/agent/logic/ExecutionEngine";
+import { Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function ChatInterface() {
-    const [input, setInput] = useState("");
-    const { status, setStatus, addLog } = useAgent();
+    const { 
+        status, setStatus, addMessage, setPlan, plan, 
+        updateStepStatus, addLog, updateArtifact,
+        chatInput: input, setChatInput: setInput 
+    } = useAgent();
 
     const handleSend = async () => {
         if (!input.trim() || status !== "IDLE") return;
 
-        // Simulation Flow
-        setStatus("THINKING");
-        addLog(`> ${input}`);
+        const userMsg = input;
         setInput("");
 
-        // Simulate Agent Thinking
-        setTimeout(() => {
-            addLog("Analyzing request...");
-        }, 500);
+        // 1. Add User Message
+        addMessage({
+            id: Date.now().toString(),
+            sender: "user",
+            content: userMsg,
+            timestamp: Date.now()
+        });
 
-        setTimeout(() => {
-            addLog("Found data source: s3://customer-logs/2024/*");
-        }, 1200);
+        // 2. Set Thinking
+        setStatus("THINKING");
 
-        setTimeout(() => {
-            addLog("Generating Ray Data pipeline for PII detection...");
-        }, 2000);
+        try {
+            // 3. Generate Plan (Mock LLM)
+            const plan = await MockPlanGenerator.generate(userMsg);
 
-        setTimeout(() => {
+            setPlan(plan);
             setStatus("PLANNING");
-            addLog("Plan generated. Ready to execute.");
-        }, 3000);
+
+            addMessage({
+                id: (Date.now() + 1).toString(),
+                sender: "agent",
+                content: `I've generated a plan to "${userMsg}". Check the pipeline view above. Click 'Execute' when ready.`,
+                timestamp: Date.now(),
+                relatedPlanId: plan.id
+            });
+
+        } catch (error) {
+            console.error(error);
+            setStatus("ERROR");
+            addMessage({
+                id: Date.now().toString(),
+                sender: "agent",
+                content: "Sorry, I failed to generate a plan. Please try again.",
+                timestamp: Date.now()
+            });
+        }
+    };
+
+    const handleExecute = async () => {
+        if (!plan) return;
+        setStatus("EXECUTING");
+
+        try {
+            await ExecutionEngine.executePlan(plan, {
+                onStepUpdate: (stepId, status) => {
+                    // Map 'active' | 'completed' | 'failed' to Step status
+                    const mappedStatus = status === "active" ? "running" : status;
+                    updateStepStatus(stepId, mappedStatus);
+                },
+                onLog: (log) => addLog(log),
+                onArtifact: (stepId, data) => updateArtifact(stepId, data)
+            });
+
+            setStatus("DONE");
+            addMessage({
+                id: Date.now().toString(),
+                sender: "agent",
+                content: "Plan execution completed successfully.",
+                timestamp: Date.now()
+            });
+            setTimeout(() => setStatus("IDLE"), 3000); // Reset after 3s
+
+        } catch (e) {
+            console.error(e);
+            setStatus("ERROR");
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        // 阻止在输入法组合态（如打拼音选词敲击的空格/回车）时意外触发提交
+        if (e.nativeEvent.isComposing) return;
+
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSend();
         }
     };
+
+    if (status === "PLANNING") {
+        return (
+            <div className="w-full bg-card/80 backdrop-blur-md border border-primary/20 shadow-2xl shadow-primary/5 rounded-xl overflow-hidden p-4 flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                    Plan is ready. Verify steps above.
+                </div>
+                <button
+                    onClick={handleExecute}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all font-medium shadow-lg shadow-green-500/20"
+                >
+                    <Play size={16} fill="currentColor" />
+                    Execute Plan
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full bg-card/80 backdrop-blur-md border border-primary/20 shadow-2xl shadow-primary/5 rounded-xl overflow-hidden transition-all focus-within:ring-1 focus-within:ring-primary/50 focus-within:border-primary/50">
@@ -72,7 +145,7 @@ export function ChatInterface() {
                                 : "bg-muted text-muted-foreground cursor-not-allowed"
                         )}
                     >
-                        {status === "THINKING" ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                        {status === "THINKING" || status === "EXECUTING" ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                     </button>
                 </div>
             </div>
