@@ -9,6 +9,36 @@ import { QualityEvaluationCard } from "@/features/quality/components/QualityEval
 import { motion, AnimatePresence } from "framer-motion";
 import { TerminalSquare, Loader2, Bot } from "lucide-react";
 
+type PdfPreviewArtifact = {
+    _is_pdf_result: true;
+    markdown_content: string;
+    metadata: Record<string, unknown>;
+    source_url: string;
+};
+
+type QualityPreviewArtifact = {
+    _is_quality_result: true;
+    evaluation: {
+        document_metrics: Record<string, number>;
+        final_score: number | null;
+        final_decision: "pass" | "reject" | "manual_review";
+        dependency_warnings?: Array<{ message: string }>;
+        normalized_text_length?: number;
+        input_meta?: Record<string, unknown>;
+        score_detail?: {
+            rule_hits?: Array<{ code: string; severity: string }>;
+        };
+    };
+    source_url?: string;
+    document_preview?: string;
+    metadata?: {
+        page_count?: number;
+        source_type?: string;
+        extract_mode?: string;
+        used_extract_kit?: boolean;
+    };
+};
+
 export function MainCanvas() {
     const { status, logs, messages, selectedResource, plan } = useAgent();
     const bottomRef = useRef<HTMLDivElement>(null);
@@ -84,6 +114,7 @@ export function MainCanvas() {
                                     if (!step) return null;
 
                                     const artifacts = plan.artifacts?.[activePreview];
+                                    const firstArtifact = artifacts?.[0];
 
                                     return (
                                         <>
@@ -112,16 +143,16 @@ export function MainCanvas() {
                                             {/* 下半部分：执行数据挂载区 */}
                                             {artifacts ? (
                                                 <div className="overflow-hidden relative z-10">
-                                                    {artifacts[0]?._is_pdf_result ? (
+                                                    {isPdfArtifact(firstArtifact) ? (
                                                         <MarkdownViewer
                                                             title={`Result Artifacts: ${step.label}`}
-                                                            data={artifacts[0]}
+                                                            data={firstArtifact}
                                                             className="border-primary/20 shadow-xl"
                                                         />
-                                                    ) : artifacts[0]?._is_quality_result ? (
+                                                    ) : isQualityArtifact(firstArtifact) ? (
                                                         <QualityEvaluationCard
                                                             title={`Result Artifacts: ${step.label}`}
-                                                            data={artifacts[0]}
+                                                            data={firstArtifact}
                                                             className="border-primary/20 shadow-xl"
                                                         />
                                                     ) : (
@@ -129,11 +160,11 @@ export function MainCanvas() {
                                                             title={`Result Artifacts: ${step.label}`}
                                                             data={artifacts}
                                                             columns={
-                                                                artifacts[0]?.chunk_id 
+                                                                hasChunkId(firstArtifact)
                                                                     ? ["chunk_id", "text", "meta_source", "meta_quality", "char_length"] 
                                                                     : ["id", "timestamp", "source_ip", "user_email", "message"]
                                                             }
-                                                            highlightColumns={activePreview.includes("PII") ? ["user_email", "message"] : (artifacts[0]?.chunk_id ? ["text"] : [])}
+                                                            highlightColumns={activePreview.includes("PII") ? ["user_email", "message"] : (hasChunkId(firstArtifact) ? ["text"] : [])}
                                                             className="border-primary/20 shadow-xl"
                                                         />
                                                     )}
@@ -188,5 +219,34 @@ export function MainCanvas() {
                 </div>
             </div>
         </div>
+    );
+}
+
+function isPdfArtifact(artifact: unknown): artifact is PdfPreviewArtifact {
+    return Boolean(
+        artifact &&
+        typeof artifact === "object" &&
+        "_is_pdf_result" in artifact &&
+        artifact._is_pdf_result === true &&
+        "markdown_content" in artifact
+    );
+}
+
+function isQualityArtifact(artifact: unknown): artifact is QualityPreviewArtifact {
+    return Boolean(
+        artifact &&
+        typeof artifact === "object" &&
+        "_is_quality_result" in artifact &&
+        artifact._is_quality_result === true &&
+        "evaluation" in artifact
+    );
+}
+
+function hasChunkId(artifact: unknown): artifact is { chunk_id: string } {
+    return Boolean(
+        artifact &&
+        typeof artifact === "object" &&
+        "chunk_id" in artifact &&
+        typeof artifact.chunk_id === "string"
     );
 }

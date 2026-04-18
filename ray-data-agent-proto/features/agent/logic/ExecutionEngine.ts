@@ -1,9 +1,7 @@
 import { ExecutionPlan, JobStep } from "../types/AgentTypes";
 import { MockDataService } from "../../data-view/logic/MockDataService";
 
-type ArtifactRecord = Record<string, unknown>;
-
-type PdfArtifact = ArtifactRecord & {
+type PdfArtifact = {
     _is_pdf_result: true;
     markdown_content: string;
     metadata?: Record<string, unknown>;
@@ -11,7 +9,7 @@ type PdfArtifact = ArtifactRecord & {
     doc_id?: string;
 };
 
-type QualityArtifact = ArtifactRecord & {
+type QualityArtifact = {
     _is_quality_result: true;
     evaluation: {
         final_decision?: string;
@@ -22,7 +20,7 @@ type QualityArtifact = ArtifactRecord & {
     };
 };
 
-type ExecutionArtifact = ArtifactRecord | PdfArtifact | QualityArtifact;
+type ExecutionArtifact = unknown;
 
 interface ExecutionCallbacks {
     onStepUpdate: (stepId: string, status: "active" | "completed" | "failed") => void;
@@ -328,12 +326,13 @@ export class ExecutionEngine {
                 const upstreamForCorpus = this.getLatestArtifact(artifactPayloads, this.isPdfArtifact);
                 if (!upstreamForCorpus) throw new Error("No upstream document found for chunking.");
                 const latestQualityResult = this.getLatestArtifact(artifactPayloads, this.isQualityArtifact);
-                if (latestQualityResult && latestQualityResult.evaluation.final_decision !== "pass") {
+                const qualityDecision = latestQualityResult?.evaluation?.final_decision ?? "manual_review";
+                if (latestQualityResult && qualityDecision !== "pass") {
                     callbacks.onLog(
-                        `Quality gate blocked corpus generation: ${latestQualityResult.evaluation.final_decision.toUpperCase()}`
+                        `Quality gate blocked corpus generation: ${qualityDecision.toUpperCase()}`
                     );
                     throw new Error(
-                        `Corpus generation halted because quality decision is ${latestQualityResult.evaluation.final_decision}.`
+                        `Corpus generation halted because quality decision is ${qualityDecision}.`
                     );
                 }
 
@@ -405,6 +404,9 @@ export class ExecutionEngine {
     }
 
     private static isPdfArtifact(artifact: ExecutionArtifact): artifact is PdfArtifact {
+        if (typeof artifact !== "object" || artifact === null) {
+            return false;
+        }
         return Boolean(
             "_is_pdf_result" in artifact &&
             artifact._is_pdf_result === true &&
@@ -414,6 +416,9 @@ export class ExecutionEngine {
     }
 
     private static isQualityArtifact(artifact: ExecutionArtifact): artifact is QualityArtifact {
+        if (typeof artifact !== "object" || artifact === null) {
+            return false;
+        }
         return Boolean(
             "_is_quality_result" in artifact &&
             artifact._is_quality_result === true &&

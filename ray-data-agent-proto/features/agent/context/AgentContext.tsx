@@ -16,7 +16,7 @@ interface AgentContextType {
     plan: ExecutionPlan | null;
     setPlan: (plan: ExecutionPlan | null) => void;
     updateStepStatus: (stepId: string, status: ExecutionPlan["steps"][0]["status"]) => void;
-    updateArtifact: (stepId: string, data: any[]) => void;
+    updateArtifact: (stepId: string, data: unknown[]) => void;
 
     reset: () => void;
 
@@ -65,7 +65,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         });
     };
 
-    const updateArtifact = (stepId: string, data: any[]) => {
+    const updateArtifact = (stepId: string, data: unknown[]) => {
         setPlan((prev) => {
             if (!prev) return null;
             return {
