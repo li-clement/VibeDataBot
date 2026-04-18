@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { Send, Sparkles, Loader2 } from "lucide-react";
 import { useAgent } from "@/features/agent/context/AgentContext";
 import { MockPlanGenerator } from "@/features/agent/logic/PlanGenerator";
@@ -123,7 +123,7 @@ export function ChatInterface() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask VibeDataBot to load data, scan for PII, or transform specific columns..."
+                    placeholder="Ask VibeDataBot to extract a PDF, run 15D quality scoring, or build a cleaned training corpus..."
                     className="w-full bg-transparent border-none focus:ring-0 text-foreground placeholder:text-muted-foreground/50 resize-none min-h-[3rem] px-4 py-3 text-[15px] outline-none"
                     rows={1}
                     disabled={status !== "IDLE"}

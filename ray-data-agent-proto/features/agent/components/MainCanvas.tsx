@@ -1,24 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useAgent, Resource } from "@/features/agent/context/AgentContext";
+import { useAgent } from "@/features/agent/context/AgentContext";
 import { PipelineVisualizer } from "@/features/pipeline/components/PipelineVisualizer";
 import { DataFrame } from "@/features/data-view/components/DataFrame";
 import { MarkdownViewer } from "@/features/data-view/components/MarkdownViewer";
 import { ResourceDetailView } from "@/features/resources/components/ResourceDetailView";
 import { MessageList } from "@/features/agent/components/MessageList";
+import { QualityEvaluationCard } from "@/features/quality/components/QualityEvaluationCard";
 import { motion, AnimatePresence } from "framer-motion";
 import { TerminalSquare, Loader2, Bot } from "lucide-react";
-
-const MOCK_SOURCE_DATA = [
-    { id: "101", timestamp: "2024-01-20T10:00:00Z", message: "User login from 192.168.1.1", email: "alice@example.com" },
-    { id: "102", timestamp: "2024-01-20T10:05:00Z", message: "Purchase completed", email: "bob@gmail.com" },
-    { id: "103", timestamp: "2024-01-20T10:12:00Z", message: "Failed login attempt", email: "charlie@corp.net" },
-];
-
-const MOCK_PII_DATA = [
-    { id: "101", timestamp: "2024-01-20T10:00:00Z", message: "User login from [IP]", email: "[EMAIL_REDACTED]" },
-    { id: "102", timestamp: "2024-01-20T10:05:00Z", message: "Purchase completed", email: "[EMAIL_REDACTED]" },
-    { id: "103", timestamp: "2024-01-20T10:12:00Z", message: "Failed login attempt", email: "[EMAIL_REDACTED]" },
-];
 
 export function MainCanvas() {
     const { status, logs, messages, selectedResource, plan } = useAgent();
@@ -56,7 +45,7 @@ export function MainCanvas() {
                                 Data Engineering, Reimagined.
                             </h1>
                             <p className="text-muted-foreground max-w-lg">
-                                Describe your data task, and VibeDataBot will orchestrate the Ray cluster to execute it at scale.
+                                Describe your PDF or data task, and VibeDataBot will orchestrate extraction, quality scoring, and corpus prep in one flow.
                             </p>
                         </div>
                     )}
@@ -129,6 +118,12 @@ export function MainCanvas() {
                                                             data={artifacts[0]}
                                                             className="border-primary/20 shadow-xl"
                                                         />
+                                                    ) : artifacts[0]?._is_quality_result ? (
+                                                        <QualityEvaluationCard
+                                                            title={`Result Artifacts: ${step.label}`}
+                                                            data={artifacts[0]}
+                                                            className="border-primary/20 shadow-xl"
+                                                        />
                                                     ) : (
                                                         <DataFrame
                                                             title={`Result Artifacts: ${step.label}`}
@@ -145,7 +140,7 @@ export function MainCanvas() {
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center justify-center p-8 border border-dashed border-border/40 rounded-xl text-muted-foreground/50 text-sm bg-muted/5">
-                                                    Agent execution strategy pending. Click 'Execute' to attach data artifacts.
+                                                    Agent execution strategy pending. Click &apos;Execute&apos; to attach data artifacts.
                                                 </div>
                                             )}
                                         </>

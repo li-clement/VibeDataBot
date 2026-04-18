@@ -21,7 +21,9 @@ export async function POST(req: NextRequest) {
         // Use python path from the local venv if available, or just fallback to 'python3'
         // For current setup, we assume python3 is accessible and libraries are installed
         const rootDir = process.cwd();
-        const pythonCommand = "python3"; 
+        const pythonCommand =
+            process.env.PYTHON_BIN ||
+            (process.env.VIRTUAL_ENV ? path.join(process.env.VIRTUAL_ENV, "bin/python") : "python");
         
         // Use cli.py
         const cliScript = path.join(rootDir, "features/pdf_extractor/logic/cli.py");
@@ -52,11 +54,18 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(result, { status: 200 });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Failed to run PDF extraction API:", error);
         return NextResponse.json(
-            { error: true, message: error.message || "Unknown execution error" },
+            { error: true, message: getErrorMessage(error) || "Unknown execution error" },
             { status: 500 }
         );
     }
+}
+
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return String(error);
 }

@@ -1,4 +1,4 @@
-import { ExecutionPlan, JobStep, StepType } from "../types/AgentTypes";
+import { ExecutionPlan, JobStep } from "../types/AgentTypes";
 
 export class MockPlanGenerator {
     static async generate(userInput: string): Promise<ExecutionPlan> {
@@ -13,6 +13,21 @@ export class MockPlanGenerator {
         if (lowerInput.includes("pdf") || lowerInput.includes("extract") || lowerInput.includes("提取")) {
             // Check if it's requesting Advanced VDU (like LayoutYOLO or PDF-Extract-Kit)
             const isAdvancedLayout = lowerInput.includes("版面") || lowerInput.includes("pdf-extract-kit") || lowerInput.includes("table") || lowerInput.includes("公式");
+            const wantsClean = lowerInput.includes("清洗") || lowerInput.includes("清理") || lowerInput.includes("clean");
+            const wantsDedup = lowerInput.includes("去重") || lowerInput.includes("重复") || lowerInput.includes("dedup");
+            const wantsQuality =
+                lowerInput.includes("质检") ||
+                lowerInput.includes("质量") ||
+                lowerInput.includes("品质") ||
+                lowerInput.includes("过滤") ||
+                lowerInput.includes("check");
+            const wantsCorpus =
+                lowerInput.includes("语料") ||
+                lowerInput.includes("分段") ||
+                lowerInput.includes("截断") ||
+                lowerInput.includes("jsonl") ||
+                lowerInput.includes("chunk");
+            const shouldRunQuality = true;
 
             // 优先匹配从目录树点击发送的标准格式 "路径是：/xxx.pdf"，其次匹配带有斜杠的绝对路径，最后退化为单词匹配
             let filePath = "";
@@ -41,7 +56,7 @@ export class MockPlanGenerator {
                 metadata: { filePath, isAdvancedLayout }
             });
 
-            if (lowerInput.includes("清洗") || lowerInput.includes("清理") || lowerInput.includes("clean")) {
+            if (wantsClean) {
                 steps.push({
                     id: `step-clean-${Date.now() + 1}`,
                     type: "CLEAN_TEXT",
@@ -52,7 +67,7 @@ export class MockPlanGenerator {
                 });
             }
 
-            if (lowerInput.includes("去重") || lowerInput.includes("重复") || lowerInput.includes("dedup")) {
+            if (wantsDedup) {
                 steps.push({
                     id: `step-dedup-${Date.now() + 2}`,
                     type: "DEDUPLICATE",
@@ -63,18 +78,18 @@ export class MockPlanGenerator {
                 });
             }
 
-            if (lowerInput.includes("质检") || lowerInput.includes("品质") || lowerInput.includes("过滤") || lowerInput.includes("check")) {
+            if (shouldRunQuality || wantsQuality || wantsCorpus) {
                 steps.push({
                     id: `step-quality-${Date.now() + 3}`,
                     type: "QUALITY_CHECK",
-                    label: "LangIDs & Heuristics Check",
-                    description: "Filtering out badly formatted text chunks, checking for extremely short bodies and perplexity scoring.",
+                    label: "15D Quality Evaluation",
+                    description: "Running the atomic 15-dimension heuristic evaluator and producing a document-level quality decision.",
                     status: "pending",
-                    codeSnippet: `def _quality_filter(row):\n    if len(row['text']) < 50: return False\n    return True\n\nds = ds.filter(_quality_filter)`
+                    codeSnippet: `quality = evaluate_record({"text": row["text"]}, output_profile="standard")\nif quality["final_decision"] != "pass":\n    raise QualityGateError(quality)\nreturn quality`
                 });
             }
 
-            if (lowerInput.includes("语料") || lowerInput.includes("分段") || lowerInput.includes("截断") || lowerInput.includes("jsonl") || lowerInput.includes("chunk")) {
+            if (wantsCorpus) {
                 steps.push({
                     id: `step-corpus-${Date.now() + 4}`,
                     type: "GENERATE_CORPUS",
