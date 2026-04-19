@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ChevronRight, ChevronDown, Folder, File, FileText, Loader2, RefreshCw } from "lucide-react";
+import { ChevronRight, Folder, File, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAgent } from "@/features/agent/context/AgentContext";
 
@@ -15,10 +15,19 @@ interface FileTreeProps {
     initialDir?: string;
 }
 
+function getBaseName(targetPath: string) {
+    const trimmed = targetPath.replace(/[\\/]+$/, "");
+    if (!trimmed) {
+        return "VibeDataBot-main";
+    }
+    const parts = trimmed.split(/[\\/]/);
+    return parts[parts.length - 1] || "VibeDataBot-main";
+}
+
 export function FileTree({ initialDir = "" }: FileTreeProps) {
     return (
         <div className="w-full text-sm text-foreground/80 p-2 max-h-[400px] overflow-y-auto scrollbar-thin">
-            <TreeNode path={initialDir} name="Local Workspace" isDirectory={true} isRoot={true} defaultExpanded={true} />
+            <TreeNode path={initialDir} name="" isDirectory={true} isRoot={true} defaultExpanded={true} />
         </div>
     );
 }
@@ -28,6 +37,7 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
     const [children, setChildren] = useState<FileNode[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasFetched, setHasFetched] = useState(false);
+    const [resolvedPath, setResolvedPath] = useState(path);
     
     // Auto-inject context
     const { setChatInput } = useAgent();
@@ -39,6 +49,9 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
             if (res.ok) {
                 const data = await res.json();
                 setChildren(data.items || []);
+                if (typeof data.path === "string") {
+                    setResolvedPath(data.path);
+                }
             }
         } catch (e) {
             console.error("Failed to load fs", e);
@@ -77,6 +90,8 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
         return <File size={14} className="text-muted-foreground/70" />;
     };
 
+    const displayName = isRoot ? getBaseName(resolvedPath) : name;
+
     return (
         <div className="flex flex-col">
             <div
@@ -99,7 +114,7 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
                 {getIcon()}
 
                 {/* Label */}
-                <span className="truncate flex-1">{name}</span>
+                <span className="truncate flex-1">{displayName}</span>
             </div>
 
             {/* Children List */}
