@@ -26,10 +26,12 @@ import { FileTree } from "@/features/navigation/components/FileTree";
 
 interface SidebarProps {
     isOpen: boolean;
+    width: number;
     toggle: () => void;
+    onResizeStart: () => void;
 }
 
-export function Sidebar({ isOpen, toggle }: SidebarProps) {
+export function Sidebar({ isOpen, width, toggle, onResizeStart }: SidebarProps) {
     const { setSelectedResource, selectedResource } = useAgent();
 
     const handleResourceClick = (res: Resource) => {
@@ -39,9 +41,10 @@ export function Sidebar({ isOpen, toggle }: SidebarProps) {
     return (
         <div
             className={cn(
-                "h-full border-r border-border bg-card/50 backdrop-blur-sm transition-all duration-300 flex flex-col z-40",
-                isOpen ? "w-64" : "w-16"
+                "relative h-full border-r border-border bg-card/50 backdrop-blur-sm transition-[width] duration-200 flex flex-col z-40",
+                isOpen ? "" : "w-16"
             )}
+            style={isOpen ? { width } : undefined}
         >
             {/* Header */}
             <div className="flex h-14 items-center px-4 border-b border-border/50">
@@ -137,6 +140,15 @@ export function Sidebar({ isOpen, toggle }: SidebarProps) {
                     {isOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
                 </button>
             </div>
+
+            {isOpen ? (
+                <button
+                    type="button"
+                    aria-label="Resize sidebar"
+                    onMouseDown={onResizeStart}
+                    className="absolute right-0 top-0 h-full w-2 translate-x-1/2 cursor-col-resize bg-transparent hover:bg-primary/20 transition-colors"
+                />
+            ) : null}
         </div>
     );
 }

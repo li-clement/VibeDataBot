@@ -1,22 +1,68 @@
 import { ExecutionPlan, JobStep } from "../types/AgentTypes";
 import { MockDataService } from "../../data-view/logic/MockDataService";
 
+type PdfArtifact = {
+    _is_pdf_result: true;
+    markdown_content: string;
+    plain_text_content?: string;
+    metadata?: Record<string, unknown>;
+    source_url?: string;
+    preview_url?: string;
+    doc_id?: string;
+};
+
+type QualityArtifact = {
+    _is_quality_result: true;
+    evaluation: {
+        final_decision?: string;
+        final_score?: number | null;
+        score_detail?: {
+            rule_hits?: Array<{ code: string; severity?: string }>;
+        };
+    };
+};
+
+type ExecutionArtifact = unknown;
+
 interface ExecutionCallbacks {
     onStepUpdate: (stepId: string, status: "active" | "completed" | "failed") => void;
     onLog: (log: string) => void;
-    onArtifact: (stepId: string, data: any[]) => void;
+    onArtifact: (stepId: string, data: ExecutionArtifact[]) => void;
+    onProgress: (progress: {
+        stepId: string | null;
+        stepLabel: string;
+        message: string;
+        percent: number;
+        indeterminate?: boolean;
+    } | null) => void;
 }
 
 export class ExecutionEngine {
     static async executePlan(plan: ExecutionPlan, callbacks: ExecutionCallbacks) {
         callbacks.onLog(`🚀 Starting execution of plan: ${plan.id}`);
+        callbacks.onProgress({
+            stepId: null,
+            stepLabel: "Preparing",
+            message: "Queued execution plan and checking prerequisites...",
+            percent: 0,
+        });
 
         // 用于在 Pipeline 级联步骤之间互相传递依赖数据
-        const artifactPayloads: Record<string, any[]> = {};
+        const artifactPayloads: Record<string, ExecutionArtifact[]> = {};
+        const totalSteps = Math.max(plan.steps.length, 1);
 
-        for (const step of plan.steps) {
+        for (const [stepIndex, step] of plan.steps.entries()) {
+            const basePercent = Math.round((stepIndex / totalSteps) * 100);
+
             // 1. Mark Running
             callbacks.onStepUpdate(step.id, "active");
+            callbacks.onProgress({
+                stepId: step.id,
+                stepLabel: step.label,
+                message: `Starting ${step.label}...`,
+                percent: basePercent,
+                indeterminate: true,
+            });
             callbacks.onLog(`\n--- [Step: ${step.label}] ---`);
             callbacks.onLog(`Executing: ${step.description}`);
             if (step.codeSnippet) {
@@ -33,17 +79,42 @@ export class ExecutionEngine {
 
                 // 3. Mark Done
                 callbacks.onStepUpdate(step.id, "completed");
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: `${step.label} completed.`,
+                    percent: Math.round(((stepIndex + 1) / totalSteps) * 100),
+                    indeterminate: false,
+                });
             } catch (error) {
                 callbacks.onLog(`❌ Error in step ${step.id}: ${error}`);
                 callbacks.onStepUpdate(step.id, "failed");
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: `${step.label} failed.`,
+                    percent: basePercent,
+                    indeterminate: false,
+                });
                 throw error;
             }
         }
 
         callbacks.onLog(`\n✅ Plan execution finished successfully.`);
+        callbacks.onProgress({
+            stepId: null,
+            stepLabel: "Completed",
+            message: "All plan steps finished successfully.",
+            percent: 100,
+            indeterminate: false,
+        });
     }
 
-    private static async simulateExecution(step: JobStep, callbacks: ExecutionCallbacks, artifactPayloads: Record<string, any[]>): Promise<any[] | void> {
+    private static async simulateExecution(
+        step: JobStep,
+        callbacks: ExecutionCallbacks,
+        artifactPayloads: Record<string, ExecutionArtifact[]>
+    ): Promise<ExecutionArtifact[] | void> {
         const baseDelay = 2000;
 
         switch (step.type) {
@@ -86,6 +157,13 @@ export class ExecutionEngine {
                 return cleanData;
 
             case "EXTRACT_PDF":
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: "Preparing atomic PDF extraction pipeline...",
+                    percent: 8,
+                    indeterminate: true,
+                });
                 callbacks.onLog("Initializing PyMuPDF / VDU Pipeline Engine...");
                 const targetFilePath = step.metadata?.filePath;
                 if (!targetFilePath) {
@@ -101,10 +179,24 @@ export class ExecutionEngine {
                     callbacks.onLog("[TableMaster] Initialized formula and tabular extractors.");
                 }
 
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: "Reading source PDF and dispatching extraction job...",
+                    percent: 18,
+                    indeterminate: true,
+                });
                 callbacks.onLog(`Dispatching Ray Tasks for local file: ${targetFilePath}`);
                 await this.delay(600);
                 
                 // Attempt to call Next.js Local API
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: "Running layout parsing, patching, and asset export. This can take a little while...",
+                    percent: 42,
+                    indeterminate: true,
+                });
                 const resp = await fetch("/api/extract-pdf", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -117,36 +209,46 @@ export class ExecutionEngine {
                 }
 
                 const pdfData = await resp.json();
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: "Rendering patched preview and assembling markdown result...",
+                    percent: 78,
+                    indeterminate: true,
+                });
                 
                 callbacks.onLog(`✅ Extraction Layout Algorithm Completed! Time: ${pdfData._processing_time_ms}ms.`);
-                
-                let outMarkdown = pdfData.markdown_content as string;
-                let addScannedWarn = pdfData._is_scanned_pdf;
 
-                if (isAdvancedLayout) {
-                    callbacks.onLog(`[Layout Analyser] Stripped 3 Headers and 2 Footnotes.`);
-                    callbacks.onLog(`[FormulaEngine] Detected and transformed 4 equations into LaTeX.`);
-                    callbacks.onLog(`[TableEngine] Converted 1 tabular region into HTML <table>.`);
-                    await this.delay(500);
-
-                    // 强行插入一段极其复杂的版面模拟，为了展现给用户对比震撼度
-                    const complexMock = `\n\n### 3. Methodology: Quantum Formulars\n\nWe define the energy state of the system as an integral over the topological surface, parsed by our VDU engine:\n\n$$ E(\psi) = \int_{\Omega} \left( \frac{1}{2} |\nabla \psi|^2 + V(x)|\psi|^2 \right) dx + \sum_{i=1}^{N} \lambda_i (x_i) $$\n\nWhere $V(x)$ is the potential energy matrix.\n\n### Financial Outcomes Overview\n\n<table border="1">\n  <tr>\n    <th>Quarter</th>\n    <th>Revenue (M)</th>\n    <th>Loss (M)</th>\n  </tr>\n  <tr>\n    <td>Q1</td>\n    <td>$12,400.00</td>\n    <td>- $300.00</td>\n  </tr>\n</table>\n\n*Extracted purely via PDF-Extract-Kit layout pipeline.*`;
-                    outMarkdown = outMarkdown + complexMock;
-                    addScannedWarn = false; // Advanced layout uses visual features anyway
-                }
+                const outMarkdown = pdfData.markdown_content as string;
+                const plainTextContent =
+                    (pdfData.plain_text_content as string | undefined) ?? (pdfData.markdown_content as string);
+                const addScannedWarn = pdfData._is_scanned_pdf;
 
                 if(addScannedWarn) {
                    callbacks.onLog(`[Warning] Deep-Track (OCR) was engaged because no digital text was found.`);
                 }
+
+                callbacks.onProgress({
+                    stepId: step.id,
+                    stepLabel: step.label,
+                    message: "PDF extraction artifacts are ready.",
+                    percent: 92,
+                    indeterminate: false,
+                });
                 
                 return [{ 
                     _is_pdf_result: true, 
                     markdown_content: outMarkdown, 
+                    plain_text_content: plainTextContent,
                     metadata: {
                         ...pdfData.metadata,
-                        used_extract_kit: isAdvancedLayout ? true : false
+                        _is_scanned_pdf: pdfData._is_scanned_pdf,
+                        used_extract_kit: pdfData.metadata?.used_extract_kit ?? isAdvancedLayout ?? false,
+                        _processing_time_ms: pdfData._processing_time_ms,
                     },
-                    source_url: pdfData.source_url || targetFilePath
+                    source_url: pdfData.source_url || targetFilePath,
+                    preview_url: pdfData.preview_url || pdfData.source_url || targetFilePath,
+                    doc_id: pdfData.doc_id,
                 }];
 
             case "CLEAN_TEXT":
@@ -154,12 +256,12 @@ export class ExecutionEngine {
                 await this.delay(800);
                 
                 // 找到上游产生的 PDF 文档数据
-                const lastPdfEntry = Object.values(artifactPayloads).flat().find(a => a?._is_pdf_result);
+                const lastPdfEntry = this.getLatestArtifact(artifactPayloads, this.isPdfArtifact);
                 if (!lastPdfEntry) {
                     throw new Error("No upstream Markdown content found. Please extract PDF first.");
                 }
 
-                let originalText = lastPdfEntry.markdown_content as string;
+                const originalText = this.getArtifactText(lastPdfEntry);
                 callbacks.onLog(`Input text size: ${originalText.length} characters.`);
                 
                 await this.delay(1500);
@@ -176,6 +278,7 @@ export class ExecutionEngine {
                 return [{
                     ...lastPdfEntry,
                     markdown_content: cleanedText,
+                    plain_text_content: cleanedText,
                     metadata: {
                         ...lastPdfEntry.metadata,
                         cleaned: true,
@@ -189,13 +292,13 @@ export class ExecutionEngine {
                 await this.delay(800);
                 
                 // 找到上游产生的清洗数据
-                const upstreamNode = Object.values(artifactPayloads).flat().find(a => a?._is_pdf_result);
+                const upstreamNode = this.getLatestArtifact(artifactPayloads, this.isPdfArtifact);
                 if (!upstreamNode) {
                     throw new Error("No upstream Markdown content found to deduplicate.");
                 }
 
-                const sourceText = upstreamNode.markdown_content as string;
-                const paragraphs = sourceText.split('\\n\\n');
+                const sourceText = this.getArtifactText(upstreamNode);
+                const paragraphs = this.splitIntoBlocks(sourceText);
                 callbacks.onLog(`Total blocks analyzed: ${paragraphs.length}`);
                 
                 await this.delay(1500);
@@ -225,6 +328,7 @@ export class ExecutionEngine {
                 return [{
                     ...upstreamNode,
                     markdown_content: dedupedBlocks.join('\\n\\n'),
+                    plain_text_content: dedupedBlocks.join('\\n\\n'),
                     metadata: {
                         ...upstreamNode.metadata,
                         deduplicated: true,
@@ -233,33 +337,63 @@ export class ExecutionEngine {
                 }];
 
             case "QUALITY_CHECK":
-                callbacks.onLog("Running Heuristics & Mock Perplexity Checks...");
-                await this.delay(1000);
-                const upstreamForQuality = Object.values(artifactPayloads).flat().find(a => a?._is_pdf_result);
+                callbacks.onLog("Running atomic 15-dimension quality evaluation...");
+                await this.delay(600);
+                const upstreamForQuality = this.getLatestArtifact(artifactPayloads, this.isPdfArtifact);
                 if (!upstreamForQuality) throw new Error("No upstream document found for quality check.");
 
-                let docText = upstreamForQuality.markdown_content as string;
-                callbacks.onLog("Scanning for language ID and non-alphanumeric noise ratio...");
-                await this.delay(1200);
+                const sourceType = upstreamForQuality.metadata?._is_scanned_pdf ? "pdf_ocr" : "pdf_text";
+                const extractMode = upstreamForQuality.metadata?._is_scanned_pdf ? "ocr" : "direct";
+                callbacks.onLog(`Submitting document to quality evaluator as ${sourceType}...`);
 
-                // 启发式：计算非字母数字/中文字符的比例
-                const lettersMatches = docText.match(/[a-zA-Z\\u4e00-\\u9fa5]/g);
-                const letterCount = lettersMatches ? lettersMatches.length : 0;
-                const noiseRatio = docText.length > 0 ? 1 - (letterCount / docText.length) : 1;
-                
-                const finalQualityScore = Math.max(0, 100 - (noiseRatio * 100)); // 满分100
+                const qualityResp = await fetch("/api/evaluate-quality", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: this.getArtifactText(upstreamForQuality),
+                        sourceType,
+                        extractMode,
+                        outputProfile: "standard",
+                        includeInputMeta: true,
+                        includeNormalizedTextLength: true,
+                        inputMeta: {
+                            page_count: upstreamForQuality.metadata?.page_count,
+                            source_path: upstreamForQuality.source_url,
+                            used_extract_kit: upstreamForQuality.metadata?.used_extract_kit ?? false,
+                            cleaned: upstreamForQuality.metadata?.cleaned ?? false,
+                            deduplicated: upstreamForQuality.metadata?.deduplicated ?? false,
+                        },
+                    }),
+                });
 
-                callbacks.onLog(`Quality Validation: Noise Ratio ${(noiseRatio*100).toFixed(2)}%, Derived Score: ${finalQualityScore.toFixed(2)} / 100`);
-                if (finalQualityScore < 20) {
-                     throw new Error("Quality Check Failed: Document contains excessive noise or random characters.");
+                if (!qualityResp.ok) {
+                    const errorData = await qualityResp.json().catch(() => ({}));
+                    throw new Error(errorData.message || `Quality evaluation failed with status: ${qualityResp.status}`);
                 }
-                
+
+                const qualityData = await qualityResp.json();
+                const decision = qualityData.final_decision ?? "manual_review";
+                const finalScore = Number(qualityData.final_score ?? 0);
+                const ruleHits: Array<{ code: string; severity?: string }> = qualityData.score_detail?.rule_hits ?? [];
+                callbacks.onLog(
+                    `Quality Validation: Score ${finalScore.toFixed(2)} / 100, Decision = ${decision.toUpperCase()}`
+                );
+                if (ruleHits.length > 0) {
+                    callbacks.onLog(
+                        `Quality Flags: ${ruleHits.map((hit) => hit.code).join(", ")}`
+                    );
+                }
+
                 return [{
-                    ...upstreamForQuality,
+                    _is_quality_result: true,
+                    evaluation: qualityData,
+                    source_url: upstreamForQuality.source_url,
+                    document_preview: this.truncateText(this.getArtifactText(upstreamForQuality), 1200),
                     metadata: {
-                        ...upstreamForQuality.metadata,
-                        quality_score: finalQualityScore.toFixed(2),
-                        passed_qc: true
+                        page_count: upstreamForQuality.metadata?.page_count,
+                        source_type: sourceType,
+                        extract_mode: extractMode,
+                        used_extract_kit: upstreamForQuality.metadata?.used_extract_kit ?? false,
                     }
                 }];
 
@@ -267,14 +401,24 @@ export class ExecutionEngine {
                 callbacks.onLog("Initiating Text Chunking (Context Window = ~1024 tokens)");
                 await this.delay(1000);
                 
-                const upstreamForCorpus = Object.values(artifactPayloads).flat().find(a => a?._is_pdf_result);
+                const upstreamForCorpus = this.getLatestArtifact(artifactPayloads, this.isPdfArtifact);
                 if (!upstreamForCorpus) throw new Error("No upstream document found for chunking.");
+                const latestQualityResult = this.getLatestArtifact(artifactPayloads, this.isQualityArtifact);
+                const qualityDecision = latestQualityResult?.evaluation?.final_decision ?? "manual_review";
+                if (latestQualityResult && qualityDecision !== "pass") {
+                    callbacks.onLog(
+                        `Quality gate blocked corpus generation: ${qualityDecision.toUpperCase()}`
+                    );
+                    throw new Error(
+                        `Corpus generation halted because quality decision is ${qualityDecision}.`
+                    );
+                }
 
-                let fullText = upstreamForCorpus.markdown_content as string;
+                const fullText = this.getArtifactText(upstreamForCorpus);
                 callbacks.onLog("Splitting by logical paragraphs to preserve semantic borders...");
                 await this.delay(1500);
 
-                const finalParagraphs = fullText.split('\\n\\n').filter(p => p.trim().length > 0);
+                const finalParagraphs = this.splitIntoBlocks(fullText);
                 const chunks = [];
                 let currentChunk = "";
                 // 模拟一个极其简单的 1000 字符切片（在真实中会走 tokenizer计算 token数）
@@ -299,7 +443,7 @@ export class ExecutionEngine {
                     text: chunkText,
                     meta_domain: "pdf_extraction",
                     meta_source: upstreamForCorpus.source_url || "local_upload",
-                    meta_quality: upstreamForCorpus.metadata?.quality_score || 100,
+                    meta_quality: latestQualityResult?.evaluation?.final_score ?? 100,
                     char_length: chunkText.length
                 }));
 
@@ -314,5 +458,66 @@ export class ExecutionEngine {
 
     private static delay(ms: number) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private static getLatestArtifact<T extends ExecutionArtifact>(
+        artifactPayloads: Record<string, ExecutionArtifact[]>,
+        predicate: (artifact: ExecutionArtifact) => artifact is T
+    ): T | null {
+        const flattened = Object.values(artifactPayloads).flat();
+        for (let index = flattened.length - 1; index >= 0; index -= 1) {
+            const candidate = flattened[index];
+            if (predicate(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static truncateText(text: string, maxLength: number) {
+        if (text.length <= maxLength) {
+            return text;
+        }
+        return `${text.slice(0, maxLength).trimEnd()}...`;
+    }
+
+    private static getArtifactText(artifact: PdfArtifact) {
+        const plain = typeof artifact.plain_text_content === "string" ? artifact.plain_text_content : "";
+        if (plain.trim()) {
+            return plain;
+        }
+        return artifact.markdown_content;
+    }
+
+    private static splitIntoBlocks(text: string) {
+        return text
+            .split(/\n\s*\n/g)
+            .map((block) => block.trim())
+            .filter((block) => block.length > 0);
+    }
+
+    private static isPdfArtifact(artifact: ExecutionArtifact): artifact is PdfArtifact {
+        if (typeof artifact !== "object" || artifact === null) {
+            return false;
+        }
+        return Boolean(
+            "_is_pdf_result" in artifact &&
+            artifact._is_pdf_result === true &&
+            "markdown_content" in artifact &&
+            typeof artifact.markdown_content === "string"
+        );
+    }
+
+    private static isQualityArtifact(artifact: ExecutionArtifact): artifact is QualityArtifact {
+        if (typeof artifact !== "object" || artifact === null) {
+            return false;
+        }
+        return Boolean(
+            "_is_quality_result" in artifact &&
+            artifact._is_quality_result === true &&
+            "evaluation" in artifact &&
+            typeof artifact.evaluation === "object" &&
+            artifact.evaluation !== null
+        );
     }
 }

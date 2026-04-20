@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-import { cn } from "@/lib/utils";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "VibeDataBot",
@@ -17,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className="dark h-full">
-      <body className={cn(inter.className, "h-full bg-background text-foreground antialiased")}>
+      <body className="h-full bg-background text-foreground antialiased">
         {children}
       </body>
     </html>

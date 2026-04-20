@@ -20,7 +20,7 @@ export interface JobStep {
     description: string;
     status: "pending" | "running" | "completed" | "failed";
     codeSnippet?: string; // Python code representation
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 export interface ExecutionPlan {
@@ -28,7 +28,15 @@ export interface ExecutionPlan {
     goal: string;
     steps: JobStep[];
     createdAt: number;
-    artifacts?: Record<string, any[]>; // stepId -> data rows
+    artifacts?: Record<string, unknown[]>; // stepId -> data rows
+}
+
+export interface ExecutionProgress {
+    stepId: string | null;
+    stepLabel: string;
+    message: string;
+    percent: number;
+    indeterminate?: boolean;
 }
 
 export interface AgentMessage {

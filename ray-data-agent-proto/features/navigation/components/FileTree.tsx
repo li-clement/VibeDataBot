@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ChevronRight, ChevronDown, Folder, File, FileText, Loader2, RefreshCw } from "lucide-react";
+import { ChevronRight, Folder, File, FileText, Loader2, ArrowUp, House } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAgent } from "@/features/agent/context/AgentContext";
 
@@ -15,19 +15,126 @@ interface FileTreeProps {
     initialDir?: string;
 }
 
+const DEFAULT_WORKSPACE_LABEL = "VibeDataBot-main";
+
+function getBaseName(targetPath: string) {
+    const trimmed = targetPath.replace(/[\\/]+$/, "");
+    if (!trimmed) {
+        return DEFAULT_WORKSPACE_LABEL;
+    }
+    const parts = trimmed.split(/[\\/]/);
+    return parts[parts.length - 1] || DEFAULT_WORKSPACE_LABEL;
+}
+
+function getParentDir(targetPath: string) {
+    const trimmed = targetPath.replace(/[\\/]+$/, "");
+    if (!trimmed) {
+        return "";
+    }
+
+    const isWindowsDriveRoot = /^[A-Za-z]:$/.test(trimmed);
+    if (isWindowsDriveRoot || trimmed === "/" || trimmed === "\\") {
+        return trimmed;
+    }
+
+    const parts = trimmed.split(/[\\/]/);
+    if (parts.length <= 1) {
+        return trimmed;
+    }
+
+    const parentParts = parts.slice(0, -1);
+    if (parentParts.length === 1 && parentParts[0] === "") {
+        return "/";
+    }
+    return parentParts.join(trimmed.includes("\\") ? "\\" : "/");
+}
+
 export function FileTree({ initialDir = "" }: FileTreeProps) {
+    const [rootPath, setRootPath] = useState(initialDir);
+    const [resolvedRootPath, setResolvedRootPath] = useState<string>("");
+    const [workspaceRoot, setWorkspaceRoot] = useState<string>("");
+
+    const effectiveRootPath = rootPath || initialDir;
+    const canGoUp = Boolean(resolvedRootPath) && getParentDir(resolvedRootPath) !== resolvedRootPath;
+    const showReturnToWorkspace = Boolean(workspaceRoot) && resolvedRootPath !== workspaceRoot;
+
     return (
-        <div className="w-full text-sm text-foreground/80 p-2 max-h-[400px] overflow-y-auto scrollbar-thin">
-            <TreeNode path={initialDir} name="Local Workspace" isDirectory={true} isRoot={true} defaultExpanded={true} />
+        <div className="w-full text-sm text-foreground/80 p-2 max-h-[400px] overflow-hidden flex flex-col gap-2">
+            <div className="rounded-md border border-border/50 bg-background/50 px-2 py-2 flex items-center gap-1.5">
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (resolvedRootPath) {
+                            setRootPath(getParentDir(resolvedRootPath));
+                        }
+                    }}
+                    disabled={!canGoUp}
+                    className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Go up one directory"
+                >
+                    <ArrowUp size={14} />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (workspaceRoot) {
+                            setRootPath(workspaceRoot);
+                        } else {
+                            setRootPath(initialDir);
+                        }
+                    }}
+                    disabled={!showReturnToWorkspace}
+                    className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Return to workspace root"
+                >
+                    <House size={14} />
+                </button>
+                <div className="min-w-0 flex-1">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Current Root</div>
+                    <div className="truncate text-xs font-medium">{resolvedRootPath || DEFAULT_WORKSPACE_LABEL}</div>
+                </div>
+            </div>
+
+            <div className="w-full flex-1 overflow-y-auto scrollbar-thin">
+                <TreeNode
+                    key={effectiveRootPath || "__workspace_root__"}
+                    path={effectiveRootPath}
+                    name=""
+                    isDirectory={true}
+                    isRoot={true}
+                    defaultExpanded={true}
+                    onResolvedPath={(resolvedPath) => {
+                        setResolvedRootPath(resolvedPath);
+                        if (!workspaceRoot) {
+                            setWorkspaceRoot(resolvedPath);
+                        }
+                    }}
+                />
+            </div>
         </div>
     );
 }
 
-function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: { path: string; name: string; isDirectory: boolean; isRoot?: boolean; defaultExpanded?: boolean }) {
+function TreeNode({
+    path,
+    name,
+    isDirectory,
+    isRoot,
+    defaultExpanded = false,
+    onResolvedPath,
+}: {
+    path: string;
+    name: string;
+    isDirectory: boolean;
+    isRoot?: boolean;
+    defaultExpanded?: boolean;
+    onResolvedPath?: (resolvedPath: string) => void;
+}) {
     const [expanded, setExpanded] = useState(defaultExpanded);
     const [children, setChildren] = useState<FileNode[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasFetched, setHasFetched] = useState(false);
+    const [resolvedPath, setResolvedPath] = useState(path);
     
     // Auto-inject context
     const { setChatInput } = useAgent();
@@ -39,6 +146,10 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
             if (res.ok) {
                 const data = await res.json();
                 setChildren(data.items || []);
+                if (typeof data.path === "string") {
+                    setResolvedPath(data.path);
+                    onResolvedPath?.(data.path);
+                }
             }
         } catch (e) {
             console.error("Failed to load fs", e);
@@ -77,6 +188,8 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
         return <File size={14} className="text-muted-foreground/70" />;
     };
 
+    const displayName = isRoot ? getBaseName(resolvedPath) : name;
+
     return (
         <div className="flex flex-col">
             <div
@@ -99,7 +212,7 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
                 {getIcon()}
 
                 {/* Label */}
-                <span className="truncate flex-1">{name}</span>
+                <span className="truncate flex-1">{displayName}</span>
             </div>
 
             {/* Children List */}
@@ -111,6 +224,7 @@ function TreeNode({ path, name, isDirectory, isRoot, defaultExpanded = false }: 
                             path={child.path}
                             name={child.name}
                             isDirectory={child.isDirectory}
+                            onResolvedPath={undefined}
                         />
                     ))}
                     {hasFetched && children.length === 0 && (

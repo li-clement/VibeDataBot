@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import os from "os";
 
 export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
-        // 如果未指定 dir，则以系统家目录为起点
-        const targetDir = searchParams.get("dir") || os.homedir();
+        const defaultWorkspaceDir = path.resolve(process.cwd(), "..");
+        const requestedDir = searchParams.get("dir");
+        // 默认从 VibeDataBot-main 工作目录开始，而不是系统家目录。
+        const targetDir = requestedDir && requestedDir.trim() ? requestedDir : defaultWorkspaceDir;
 
         // 防止目录遍历攻击跳出指定限制（虽然在本地环境相对安全，但加上较好）
         const resolvedPath = path.resolve(targetDir);
@@ -46,8 +47,9 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({ path: resolvedPath, items: result }, { status: 200 });
 
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Failed to read directory:", e);
-        return NextResponse.json({ error: true, message: e.message }, { status: 500 });
+        const message = e instanceof Error ? e.message : String(e);
+        return NextResponse.json({ error: true, message }, { status: 500 });
     }
 }

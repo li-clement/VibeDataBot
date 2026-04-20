@@ -16,6 +16,8 @@
 # next.js
 /.next/
 /out/
+/runtime/pdf_extractor_outputs/*
+!/runtime/pdf_extractor_outputs/.gitkeep
 
 # production
 /build
@@ -23,6 +25,10 @@
 # misc
 .DS_Store
 *.pem
+*.pyc
+*.pyo
+__pycache__/
+.pytest_cache/
 
 # debug
 npm-debug.log*

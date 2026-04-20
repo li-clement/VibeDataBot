@@ -1,27 +1,48 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useAgent, Resource } from "@/features/agent/context/AgentContext";
+import { useAgent } from "@/features/agent/context/AgentContext";
 import { PipelineVisualizer } from "@/features/pipeline/components/PipelineVisualizer";
 import { DataFrame } from "@/features/data-view/components/DataFrame";
 import { MarkdownViewer } from "@/features/data-view/components/MarkdownViewer";
 import { ResourceDetailView } from "@/features/resources/components/ResourceDetailView";
 import { MessageList } from "@/features/agent/components/MessageList";
+import { QualityEvaluationCard } from "@/features/quality/components/QualityEvaluationCard";
 import { motion, AnimatePresence } from "framer-motion";
 import { TerminalSquare, Loader2, Bot } from "lucide-react";
 
-const MOCK_SOURCE_DATA = [
-    { id: "101", timestamp: "2024-01-20T10:00:00Z", message: "User login from 192.168.1.1", email: "alice@example.com" },
-    { id: "102", timestamp: "2024-01-20T10:05:00Z", message: "Purchase completed", email: "bob@gmail.com" },
-    { id: "103", timestamp: "2024-01-20T10:12:00Z", message: "Failed login attempt", email: "charlie@corp.net" },
-];
+type PdfPreviewArtifact = {
+    _is_pdf_result: true;
+    markdown_content: string;
+    plain_text_content?: string;
+    metadata: Record<string, unknown>;
+    source_url: string;
+    preview_url?: string;
+};
 
-const MOCK_PII_DATA = [
-    { id: "101", timestamp: "2024-01-20T10:00:00Z", message: "User login from [IP]", email: "[EMAIL_REDACTED]" },
-    { id: "102", timestamp: "2024-01-20T10:05:00Z", message: "Purchase completed", email: "[EMAIL_REDACTED]" },
-    { id: "103", timestamp: "2024-01-20T10:12:00Z", message: "Failed login attempt", email: "[EMAIL_REDACTED]" },
-];
+type QualityPreviewArtifact = {
+    _is_quality_result: true;
+    evaluation: {
+        document_metrics: Record<string, number>;
+        final_score: number | null;
+        final_decision: "pass" | "reject" | "manual_review";
+        dependency_warnings?: Array<{ message: string }>;
+        normalized_text_length?: number;
+        input_meta?: Record<string, unknown>;
+        score_detail?: {
+            rule_hits?: Array<{ code: string; severity: string }>;
+        };
+    };
+    source_url?: string;
+    document_preview?: string;
+    metadata?: {
+        page_count?: number;
+        source_type?: string;
+        extract_mode?: string;
+        used_extract_kit?: boolean;
+    };
+};
 
 export function MainCanvas() {
-    const { status, logs, messages, selectedResource, plan } = useAgent();
+    const { status, logs, messages, selectedResource, plan, executionProgress } = useAgent();
     const bottomRef = useRef<HTMLDivElement>(null);
     const [activePreview, setActivePreview] = useState<string | null>(null);
 
@@ -56,7 +77,7 @@ export function MainCanvas() {
                                 Data Engineering, Reimagined.
                             </h1>
                             <p className="text-muted-foreground max-w-lg">
-                                Describe your data task, and VibeDataBot will orchestrate the Ray cluster to execute it at scale.
+                                Describe your PDF or data task, and VibeDataBot will orchestrate extraction, quality scoring, and corpus prep in one flow.
                             </p>
                         </div>
                     )}
@@ -81,6 +102,53 @@ export function MainCanvas() {
                         )}
                     </AnimatePresence>
 
+                    <AnimatePresence>
+                        {status === "EXECUTING" && executionProgress && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -8 }}
+                                className="rounded-xl border border-primary/20 bg-card/70 backdrop-blur-md p-4 shadow-lg"
+                            >
+                                <div className="flex items-center justify-between gap-4 mb-3">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-foreground">
+                                            {executionProgress.stepLabel || "Working"}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {executionProgress.message}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm font-mono text-primary">
+                                        {Math.max(0, Math.min(100, executionProgress.percent))}%
+                                    </div>
+                                </div>
+
+                                <div className="h-2 rounded-full bg-muted/70 overflow-hidden">
+                                    <motion.div
+                                        className="h-full bg-gradient-to-r from-primary via-sky-400 to-cyan-300"
+                                        initial={false}
+                                        animate={
+                                            executionProgress.indeterminate
+                                                ? { x: ["-40%", "120%"] }
+                                                : { width: `${Math.max(6, executionProgress.percent)}%`, x: "0%" }
+                                        }
+                                        transition={
+                                            executionProgress.indeterminate
+                                                ? { repeat: Infinity, duration: 1.4, ease: "easeInOut" }
+                                                : { duration: 0.35, ease: "easeOut" }
+                                        }
+                                        style={
+                                            executionProgress.indeterminate
+                                                ? { width: "35%" }
+                                                : { width: `${Math.max(6, executionProgress.percent)}%` }
+                                        }
+                                    />
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
                     {/* Data Preview Modal Area */}
                     <AnimatePresence>
                         {activePreview && plan && (
@@ -95,6 +163,7 @@ export function MainCanvas() {
                                     if (!step) return null;
 
                                     const artifacts = plan.artifacts?.[activePreview];
+                                    const firstArtifact = artifacts?.[0];
 
                                     return (
                                         <>
@@ -123,10 +192,16 @@ export function MainCanvas() {
                                             {/* 下半部分：执行数据挂载区 */}
                                             {artifacts ? (
                                                 <div className="overflow-hidden relative z-10">
-                                                    {artifacts[0]?._is_pdf_result ? (
+                                                    {isPdfArtifact(firstArtifact) ? (
                                                         <MarkdownViewer
                                                             title={`Result Artifacts: ${step.label}`}
-                                                            data={artifacts[0]}
+                                                            data={firstArtifact}
+                                                            className="border-primary/20 shadow-xl"
+                                                        />
+                                                    ) : isQualityArtifact(firstArtifact) ? (
+                                                        <QualityEvaluationCard
+                                                            title={`Result Artifacts: ${step.label}`}
+                                                            data={firstArtifact}
                                                             className="border-primary/20 shadow-xl"
                                                         />
                                                     ) : (
@@ -134,18 +209,18 @@ export function MainCanvas() {
                                                             title={`Result Artifacts: ${step.label}`}
                                                             data={artifacts}
                                                             columns={
-                                                                artifacts[0]?.chunk_id 
+                                                                hasChunkId(firstArtifact)
                                                                     ? ["chunk_id", "text", "meta_source", "meta_quality", "char_length"] 
                                                                     : ["id", "timestamp", "source_ip", "user_email", "message"]
                                                             }
-                                                            highlightColumns={activePreview.includes("PII") ? ["user_email", "message"] : (artifacts[0]?.chunk_id ? ["text"] : [])}
+                                                            highlightColumns={activePreview.includes("PII") ? ["user_email", "message"] : (hasChunkId(firstArtifact) ? ["text"] : [])}
                                                             className="border-primary/20 shadow-xl"
                                                         />
                                                     )}
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center justify-center p-8 border border-dashed border-border/40 rounded-xl text-muted-foreground/50 text-sm bg-muted/5">
-                                                    Agent execution strategy pending. Click 'Execute' to attach data artifacts.
+                                                    Agent execution strategy pending. Click &apos;Execute&apos; to attach data artifacts.
                                                 </div>
                                             )}
                                         </>
@@ -193,5 +268,34 @@ export function MainCanvas() {
                 </div>
             </div>
         </div>
+    );
+}
+
+function isPdfArtifact(artifact: unknown): artifact is PdfPreviewArtifact {
+    return Boolean(
+        artifact &&
+        typeof artifact === "object" &&
+        "_is_pdf_result" in artifact &&
+        artifact._is_pdf_result === true &&
+        "markdown_content" in artifact
+    );
+}
+
+function isQualityArtifact(artifact: unknown): artifact is QualityPreviewArtifact {
+    return Boolean(
+        artifact &&
+        typeof artifact === "object" &&
+        "_is_quality_result" in artifact &&
+        artifact._is_quality_result === true &&
+        "evaluation" in artifact
+    );
+}
+
+function hasChunkId(artifact: unknown): artifact is { chunk_id: string } {
+    return Boolean(
+        artifact &&
+        typeof artifact === "object" &&
+        "chunk_id" in artifact &&
+        typeof artifact.chunk_id === "string"
     );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { Send, Sparkles, Loader2 } from "lucide-react";
 import { useAgent } from "@/features/agent/context/AgentContext";
 import { MockPlanGenerator } from "@/features/agent/logic/PlanGenerator";
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 export function ChatInterface() {
     const { 
         status, setStatus, addMessage, setPlan, plan, 
-        updateStepStatus, addLog, updateArtifact,
+        updateStepStatus, addLog, updateArtifact, setExecutionProgress,
         chatInput: input, setChatInput: setInput 
     } = useAgent();
 
@@ -20,6 +20,7 @@ export function ChatInterface() {
 
         const userMsg = input;
         setInput("");
+        setExecutionProgress(null);
 
         // 1. Add User Message
         addMessage({
@@ -71,7 +72,8 @@ export function ChatInterface() {
                     updateStepStatus(stepId, mappedStatus);
                 },
                 onLog: (log) => addLog(log),
-                onArtifact: (stepId, data) => updateArtifact(stepId, data)
+                onArtifact: (stepId, data) => updateArtifact(stepId, data),
+                onProgress: (progress) => setExecutionProgress(progress),
             });
 
             setStatus("DONE");
@@ -81,7 +83,10 @@ export function ChatInterface() {
                 content: "Plan execution completed successfully.",
                 timestamp: Date.now()
             });
-            setTimeout(() => setStatus("IDLE"), 3000); // Reset after 3s
+            setTimeout(() => {
+                setStatus("IDLE");
+                setExecutionProgress(null);
+            }, 3000); // Reset after 3s
 
         } catch (e) {
             console.error(e);
@@ -123,7 +128,7 @@ export function ChatInterface() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask VibeDataBot to load data, scan for PII, or transform specific columns..."
+                    placeholder="Ask VibeDataBot to extract a PDF, run 15D quality scoring, or build a cleaned training corpus..."
                     className="w-full bg-transparent border-none focus:ring-0 text-foreground placeholder:text-muted-foreground/50 resize-none min-h-[3rem] px-4 py-3 text-[15px] outline-none"
                     rows={1}
                     disabled={status !== "IDLE"}
